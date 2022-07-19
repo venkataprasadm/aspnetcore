@@ -461,9 +461,6 @@ public partial class HttpConnection : ConnectionContext, IConnectionInherentKeep
 
             using (var request = new HttpRequestMessage(HttpMethod.Post, uri))
             {
-                // Corefx changed the default version and High Sierra curlhandler tries to upgrade request
-                request.Version = new Version(1, 1);
-
                 // ResponseHeadersRead instructs SendAsync to return once headers are read
                 // rather than buffer the entire response. This gives a small perf boost.
                 // Note that it is important to dispose of the response when doing this to
