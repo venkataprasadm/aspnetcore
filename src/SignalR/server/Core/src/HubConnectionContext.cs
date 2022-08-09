@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipelines;
 using System.Security.Claims;
+using System.Threading.Channels;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.AspNetCore.Http.Features;
@@ -85,6 +86,16 @@ public partial class HubConnectionContext
         {
             ActiveInvocationLimit = new SemaphoreSlim(maxInvokeLimit, maxInvokeLimit);
         }
+
+        // TODO: configurable capacity
+        PendingInvokes = Channel.CreateBounded<(HubMethodInvocationMessage, bool isStreamResponse, HubMethodDescriptor, object?[])> (new BoundedChannelOptions(5)
+        {
+            AllowSynchronousContinuations = false,
+            // We use TryWrite, Wait mode is the only option that returns false when the channel is full
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleWriter = true,
+            SingleReader = true,
+        });
     }
 
     internal StreamTracker StreamTracker
@@ -101,12 +112,16 @@ public partial class HubConnectionContext
         }
     }
 
+    internal Channel<(HubMethodInvocationMessage, bool isStreamResponse, HubMethodDescriptor, object?[])> PendingInvokes { get; private set; }
+
     internal HubCallerContext HubCallerContext { get; }
     internal HubCallerClients HubCallerClients { get; set; } = null!;
 
     internal Exception? CloseException { get; private set; }
 
     internal SemaphoreSlim? ActiveInvocationLimit { get; }
+
+    internal Task? InvokeLoop { get; set; }
 
     /// <summary>
     /// Gets a <see cref="CancellationToken"/> that notifies when the connection is aborted.
@@ -676,6 +691,8 @@ public partial class HubConnectionContext
     private static void AbortConnection(object? state)
     {
         var connection = (HubConnectionContext)state!;
+
+        connection.PendingInvokes.Writer.TryComplete();
 
         try
         {

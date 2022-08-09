@@ -543,7 +543,11 @@ public partial class HubConnectionHandlerTests : VerifiableLoggedTest
         using (StartVerifiableLog())
         {
             var connectionHandler = HubConnectionHandlerTestUtils.GetHubConnectionHandler(typeof(HubT), LoggerFactory,
-                services => services.AddSignalR().AddHubOptions<HubT>(o => o.MaximumReceiveMessageSize = maximumMessageSize));
+                services => services.AddSignalR().AddHubOptions<HubT>(o =>
+                {
+                    o.MaximumReceiveMessageSize = maximumMessageSize;
+                    o.EnableDetailedErrors = true;
+                }));
 
             using (var client = new TestClient())
             {
@@ -554,20 +558,33 @@ public partial class HubConnectionHandlerTests : VerifiableLoggedTest
                 client.Connection.Application.Output.Write(payload3);
                 await client.Connection.Application.Output.FlushAsync();
 
-                // 2 invocations should be processed
-                var completionMessage = await client.ReadAsync().DefaultTimeout() as CompletionMessage;
-                Assert.NotNull(completionMessage);
-                Assert.Equal("1", completionMessage.InvocationId);
-                Assert.Equal("one", completionMessage.Result);
-
-                completionMessage = await client.ReadAsync().DefaultTimeout() as CompletionMessage;
-                Assert.NotNull(completionMessage);
-                Assert.Equal("2", completionMessage.InvocationId);
-                Assert.Equal("two", completionMessage.Result);
-
-                // We never receive the 3rd message since it was over the maximum message size
-                CloseMessage closeMessage = await client.ReadAsync().DefaultTimeout() as CloseMessage;
-                Assert.NotNull(closeMessage);
+                // 0-2 invocations may be processed, invocations are put in a queue to unblock the receive loop, so the processing of the queue can race with the reading of the bad message and closing of the connection
+                for (var i = 0; i < 3; ++i)
+                {
+                    var hubMessage = await client.ReadAsync().DefaultTimeout();
+                    if (hubMessage is CloseMessage closeMessage)
+                    {
+                        Assert.Equal("Connection closed with an error. InvalidDataException: The maximum message size of 71B was exceeded. The message size can be configured in AddHubOptions.", closeMessage.Error);
+                        break;
+                    }
+                    else if (hubMessage is CompletionMessage completionMessage)
+                    {
+                        if (i == 0)
+                        {
+                            Assert.Equal("1", completionMessage.InvocationId);
+                            Assert.Equal("one", completionMessage.Result);
+                        }
+                        else
+                        {
+                            Assert.Equal("2", completionMessage.InvocationId);
+                            Assert.Equal("two", completionMessage.Result);
+                        }
+                    }
+                    else
+                    {
+                        Assert.True(false);
+                    }
+                }
 
                 client.Dispose();
 
@@ -2964,7 +2981,7 @@ public partial class HubConnectionHandlerTests : VerifiableLoggedTest
         public PipeWriter Output => _originalDuplexPipe.Output;
     }
 
-    [Fact]
+    [Fact(Skip = "Invokes no longer block receive loop, figure out what we want to test here")]
     public async Task HubMethodInvokeDoesNotCountTowardsClientTimeout()
     {
         using (StartVerifiableLog())
@@ -3242,6 +3259,7 @@ public partial class HubConnectionHandlerTests : VerifiableLoggedTest
                 builder.AddSingleton(typeof(IHubActivator<>), typeof(CustomHubActivator<>));
             }, LoggerFactory);
             var connectionHandler = serviceProvider.GetService<HubConnectionHandler<StreamingHub>>();
+            var hubActivator = serviceProvider.GetService<IHubActivator<StreamingHub>>() as CustomHubActivator<StreamingHub>;
 
             using (var client = new TestClient())
             {
@@ -3250,20 +3268,24 @@ public partial class HubConnectionHandlerTests : VerifiableLoggedTest
                 await client.Connected.DefaultTimeout();
 
                 await client.SendHubMessageAsync(new StreamInvocationMessage("123", nameof(StreamingHub.BlockingStream), Array.Empty<object>())).DefaultTimeout();
+                await hubActivator.CreateTask.Task.DefaultTimeout();
 
                 await client.SendHubMessageAsync(new StreamInvocationMessage("123", nameof(StreamingHub.BlockingStream), Array.Empty<object>())).DefaultTimeout();
 
                 var completion = Assert.IsType<CompletionMessage>(await client.ReadAsync().DefaultTimeout());
                 Assert.Equal("Invocation ID '123' is already in use.", completion.Error);
 
-                var hubActivator = serviceProvider.GetService<IHubActivator<StreamingHub>>() as CustomHubActivator<StreamingHub>;
-
-                // OnConnectedAsync and BlockingStream hubs have been disposed
-                Assert.Equal(2, hubActivator.ReleaseCount);
+                // OnConnectedAsync Hub has been disposed, BlockingStream still running
+                Assert.Equal(1, hubActivator.ReleaseCount);
+                Assert.Equal(2, hubActivator.CreatedCount);
 
                 client.Dispose();
 
                 await connectionHandlerTask.DefaultTimeout();
+
+                // OnConnectedAsync, BlockingStream, and OnDisconnectedAsync hubs have been disposed
+                Assert.Equal(3, hubActivator.ReleaseCount);
+                Assert.Equal(3, hubActivator.CreatedCount);
             }
         }
     }
@@ -4845,6 +4867,7 @@ public partial class HubConnectionHandlerTests : VerifiableLoggedTest
 
     private class CustomHubActivator<THub> : IHubActivator<THub> where THub : Hub
     {
+        public int CreatedCount;
         public int ReleaseCount;
         private readonly IServiceProvider _serviceProvider;
         public TaskCompletionSource ReleaseTask = new TaskCompletionSource();
@@ -4857,6 +4880,7 @@ public partial class HubConnectionHandlerTests : VerifiableLoggedTest
 
         public THub Create()
         {
+            CreatedCount++;
             ReleaseTask = new TaskCompletionSource();
             var hub = new DefaultHubActivator<THub>(_serviceProvider).Create();
             CreateTask.TrySetResult();
