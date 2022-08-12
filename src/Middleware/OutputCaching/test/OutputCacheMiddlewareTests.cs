@@ -1,9 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Diagnostics.Metrics;
-using System.Threading.Tasks;
-using System;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.OutputCaching.Memory;
@@ -788,7 +785,7 @@ public class OutputCacheMiddlewareTests
         var uppercaseStrings = new StringValues(new[] { "STRINGA", "STRINGB" });
         var lowercaseStrings = new StringValues(new[] { "stringA", "stringB" });
 
-        var normalizedStrings = OutputCacheMiddleware.GetOrderCasingNormalizedStringValues(lowercaseStrings);
+        var normalizedStrings = OutputCacheKeyProvider.GetOrderCasingNormalizedStringValues(lowercaseStrings);
 
         Assert.Equal(uppercaseStrings, normalizedStrings);
     }
@@ -799,7 +796,7 @@ public class OutputCacheMiddlewareTests
         var orderedStrings = new StringValues(new[] { "STRINGA", "STRINGB" });
         var reverseOrderStrings = new StringValues(new[] { "STRINGB", "STRINGA" });
 
-        var normalizedStrings = OutputCacheMiddleware.GetOrderCasingNormalizedStringValues(reverseOrderStrings);
+        var normalizedStrings = OutputCacheKeyProvider.GetOrderCasingNormalizedStringValues(reverseOrderStrings);
 
         Assert.Equal(orderedStrings, normalizedStrings);
     }
@@ -809,7 +806,7 @@ public class OutputCacheMiddlewareTests
     {
         var originalStrings = new StringValues(new[] { "STRINGA, STRINGB" });
 
-        var normalizedStrings = OutputCacheMiddleware.GetOrderCasingNormalizedStringValues(originalStrings);
+        var normalizedStrings = OutputCacheKeyProvider.GetOrderCasingNormalizedStringValues(originalStrings);
 
         Assert.Equal(originalStrings, normalizedStrings);
     }
@@ -887,7 +884,7 @@ public class OutputCacheMiddlewareTests
                     task2Executing.Set();
                     break;
             }
-            
+
             c.Response.Write("Hello" + responseCounter);
             return Task.CompletedTask;
         });

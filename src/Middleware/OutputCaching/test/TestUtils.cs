@@ -2,7 +2,6 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 #nullable enable
-using System;
 using System.Net.Http;
 using System.Text;
 using Microsoft.AspNetCore.Builder;
@@ -275,11 +274,10 @@ internal class LoggedMessage
     internal static LoggedMessage CachedResponseServed => new LoggedMessage(5, LogLevel.Information);
     internal static LoggedMessage GatewayTimeoutServed => new LoggedMessage(6, LogLevel.Information);
     internal static LoggedMessage NoResponseServed => new LoggedMessage(7, LogLevel.Information);
-    internal static LoggedMessage VaryByRulesUpdated => new LoggedMessage(8, LogLevel.Debug);
-    internal static LoggedMessage ResponseCached => new LoggedMessage(9, LogLevel.Information);
-    internal static LoggedMessage ResponseNotCached => new LoggedMessage(10, LogLevel.Information);
-    internal static LoggedMessage ResponseContentLengthMismatchNotCached => new LoggedMessage(11, LogLevel.Warning);
-    internal static LoggedMessage ExpirationExpiresExceeded => new LoggedMessage(12, LogLevel.Debug);
+    internal static LoggedMessage ResponseCached => new LoggedMessage(8, LogLevel.Information);
+    internal static LoggedMessage ResponseNotCached => new LoggedMessage(9, LogLevel.Information);
+    internal static LoggedMessage ResponseContentLengthMismatchNotCached => new LoggedMessage(10, LogLevel.Warning);
+    internal static LoggedMessage ExpirationExpiresExceeded => new LoggedMessage(11, LogLevel.Debug);
 
     private LoggedMessage(int evenId, LogLevel logLevel)
     {
